@@ -1,0 +1,154 @@
+CREATE TABLE службы (
+    код_службы SERIAL PRIMARY KEY,
+    название VARCHAR(100) NOT NULL UNIQUE,
+    адрес VARCHAR(255)
+);
+
+CREATE TABLE отделы_служб (
+    код_отдела SERIAL PRIMARY KEY,
+    код_службы INTEGER NOT NULL REFERENCES службы(код_службы),
+    название VARCHAR(100) NOT NULL UNIQUE,
+    адрес VARCHAR(255)
+);
+
+CREATE TABLE участки (
+    код_участка SERIAL PRIMARY KEY,
+    код_отдела INTEGER NOT NULL REFERENCES отделы_служб(код_отдела),
+    название VARCHAR(100) NOT NULL UNIQUE,
+    площадь NUMERIC(10, 2)
+);
+
+CREATE TABLE дома (
+    код_дома SERIAL PRIMARY KEY,
+    код_участка INTEGER NOT NULL REFERENCES участки(код_участка),
+    название VARCHAR(100) NOT NULL,
+    площадь NUMERIC(10, 2)
+);
+
+CREATE TABLE квартиры (
+    код_квартиры SERIAL PRIMARY KEY,
+    код_дома INTEGER NOT NULL REFERENCES дома(код_дома),
+    номер VARCHAR(20) NOT NULL,
+    площадь NUMERIC(10, 2),
+    хол_вода BOOLEAN DEFAULT FALSE,
+    гор_вода BOOLEAN DEFAULT FALSE,
+    мусоропровод BOOLEAN DEFAULT FALSE,
+    лифт BOOLEAN DEFAULT FALSE
+);
+
+CREATE TABLE жильцы (
+    код_жильца SERIAL PRIMARY KEY,
+    код_квартиры INTEGER NOT NULL REFERENCES квартиры(код_квартиры),
+    имя VARCHAR(100) NOT NULL,
+    фамилия VARCHAR(100) NOT NULL,
+    дата_рождения DATE NOT NULL CHECK (дата_рождения <= CURRENT_DATE),
+    тел_контакта VARCHAR(20)
+);
+
+CREATE TABLE шифры_плательщика (
+    код_шифра SERIAL PRIMARY KEY,
+    название VARCHAR(100) NOT NULL UNIQUE,
+    процент NUMERIC(5, 2) NOT NULL CHECK (процент BETWEEN 0 AND 100)
+);
+
+CREATE TABLE тарифы (
+    код_тарифа SERIAL PRIMARY KEY,
+    хол_вода BOOLEAN DEFAULT FALSE,
+    гор_вода BOOLEAN DEFAULT FALSE,
+    мусоропровод BOOLEAN DEFAULT FALSE,
+    лифт BOOLEAN DEFAULT FALSE,
+    сумма NUMERIC(10, 2) NOT NULL
+);
+
+CREATE INDEX idx_отделы_служб_код_службы ON отделы_служб(код_службы);
+CREATE INDEX idx_участки_код_отдела ON участки(код_отдела);
+CREATE INDEX idx_дома_код_участка ON дома(код_участка);
+CREATE INDEX idx_квартиры_код_дома ON квартиры(код_дома);
+CREATE INDEX idx_жильцы_код_квартиры ON жильцы(код_квартиры);
+CREATE INDEX idx_шифры_плательщика_название ON шифры_плательщика(название);
+
+CREATE OR REPLACE FUNCTION удалить_участок()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM дома WHERE код_участка = OLD.код_участка;
+    DELETE FROM квартиры WHERE код_дома IN (SELECT код_дома FROM дома WHERE код_участка = OLD.код_участка);
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER триггер_удалить_участок
+BEFORE DELETE ON участки
+FOR EACH ROW
+EXECUTE FUNCTION удалить_участок();
+
+CREATE OR REPLACE FUNCTION обновить_таблицу_жильцов()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE жильцы
+    SET
+        хол_вода = (SELECT хол_вода FROM квартиры WHERE код_квартиры = NEW.код_квартиры),
+        гор_вода = (SELECT гор_вода FROM квартиры WHERE код_квартиры = NEW.код_квартиры),
+        мусоропровод = (SELECT мусоропровод FROM квартиры WHERE код_квартиры = NEW.код_квартиры),
+        лифт = (SELECT лифт FROM квартиры WHERE код_квартиры = NEW.код_квартиры)
+    WHERE код_квартиры = NEW.код_квартиры;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER триггер_обновить_жильцов
+AFTER INSERT OR UPDATE ON квартиры
+FOR EACH ROW
+EXECUTE FUNCTION обновить_таблицу_жильцов();
+
+CREATE VIEW квартиры_с_параметрами AS
+SELECT
+    код_квартиры,
+    номер,
+    площадь,
+    хол_вода,
+    гор_вода,
+    мусоропровод,
+    лифт
+FROM квартиры;
+
+CREATE VIEW жильцы_с_квартирами AS
+SELECT
+    ж.код_жильца,
+    ж.имя,
+    ж.фамилия,
+    ж.дата_рождения,
+    ж.тел_контакта,
+    к.номер AS номер_квартиры,
+    к.площадь AS площадь_квартиры,
+    к.хол_вода,
+    к.гор_вода,
+    к.мусоропровод,
+    к.лифт
+FROM жильцы ж
+JOIN квартиры к ON ж.код_квартиры = к.код_квартиры;
+
+SELECT * FROM жильцы_с_квартирами
+WHERE номер_квартиры = '12A';
+
+SELECT AVG(площадь) AS средняя_площадь
+FROM квартиры
+WHERE код_дома = 1;
+
+SELECT
+    ш.название AS шифр,
+    т.сумма * ш.процент / 100 AS сумма_оплаты
+FROM шифры_плательщика ш
+JOIN тарифы т ON ш.код_шифра = т.код_тарифа;
+
+SELECT * FROM жильцы_с_квартирами
+WHERE номер_квартиры = '12A';
+
+SELECT AVG(площадь) AS средняя_площадь
+FROM квартиры
+WHERE код_дома = 1;
+
+SELECT
+    ш.название AS шифр,
+    т.сумма * ш.процент / 100 AS сумма_оплаты
+FROM шифры_плательщика ш
+JOIN тарифы т ON ш.код_шифра = т.код_тарифа;
