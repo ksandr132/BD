@@ -79,6 +79,8 @@ class Col:
     col_type: str  # text, int, bool, date, numeric, serial, fk_int
     required: bool = False
     editable: bool = True
+    ref_table: str | None = None
+    ref_label: str | None = None
 
 
 @dataclass
@@ -90,7 +92,7 @@ class TableSpec:
     order_by_default: List[str]
     searchable: List[str] = field(default_factory=list)
     filterable: List[str] = field(default_factory=list)
-
+    display_columns: List[str] = field(default_factory=list)
 
 TABLE_SPECS = {
     "services": TableSpec(
@@ -98,7 +100,7 @@ TABLE_SPECS = {
         title="Службы",
         pk=["service_id"],
         columns=[
-            Col("service_id", "Код (ID)", "serial", required=False, editable=False),
+            Col("service_id", "Код службы", "serial", required=False, editable=False),
             Col("service_code", "Код службы", "text", required=True),
             Col("name", "Наименование", "text", required=True),
             Col("phone", "Телефон", "text", required=False),
@@ -199,6 +201,7 @@ TABLE_SPECS = {
         order_by_default=["street", "house_number"],
         searchable=["street", "house_number"],
         filterable=["service_id", "dept_id", "site_id", "street", "election_precinct_id"],
+        display_columns=["street", "house_number"],
     ),
     "apartments": TableSpec(
         sql_name="apartments",
@@ -916,7 +919,10 @@ def _parse_pk(spec: TableSpec, s: str) -> Tuple[Any, ...]:
     for i, p in enumerate(parts):
         col_name = spec.pk[i]
         col = next(c for c in spec.columns if c.sql == col_name)
-        out.append(parse_value(p, col))
+        if col.col_type in ("serial", "int", "fk_int"):
+            out.append(int(p))
+        else:
+            out.append(p)
     return tuple(out)
 
 
@@ -946,12 +952,29 @@ def browse_table(key: str) -> None:
             print("Фильтры:", filters)
         if search:
             print("Поиск:", search)
-        preview_col = next((c.sql for c in spec.columns if c.sql not in spec.pk), None)
+        preview_fields = []
+        for c in spec.columns:
+            if c.sql in spec.pk:
+                continue
+            if key == "tariffs" and c.col_type == "bool":
+                continue
+            if key == "residents" and c.sql in ["full_name", "is_primary_tenant"]:
+                preview_fields.append(c.sql)
+            elif c.col_type in ["text", "int", "numeric", "date"] and len(preview_fields) < 4:
+                preview_fields.append(c.sql)
+
         for idx, row in enumerate(rows):
             print(f"[{idx}] ", end="")
             pk_show = ", ".join(str(row[k]) for k in spec.pk)
-            extra = row.get(preview_col, "") if preview_col else ""
-            print(f"PK=({pk_show}) {extra}")
+    
+            preview_parts = []
+            for field in preview_fields:
+                col = next(c for c in spec.columns if c.sql == field)
+                val = row.get(field, "")
+                preview_parts.append(f"{col.label}: {format_cell(val, col)}")
+    
+            preview_str = " | ".join(preview_parts)
+            print(f"PK=({pk_show}) -> {preview_str}")
         print(
             "Команды: n — вперёд, p — назад, b — в начало, g — к смещению, "
             "s — поиск, f — фильтр, o — сортировка, a — добавить, "
