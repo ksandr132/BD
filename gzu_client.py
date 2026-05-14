@@ -1,10 +1,3 @@
-"""
-Служба заказчика ГЖУ — консольный клиент PostgreSQL (один файл).
-Запуск из папки проекта: py -3 gzu_client.py  или  python gzu_client.py
-
-Зависимость: pip install psycopg2-binary
-При ошибке прокси: pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org psycopg2-binary
-"""
 import os
 os.environ["PGCLIENTENCODING"] = "UTF8"
 from contextlib import contextmanager
